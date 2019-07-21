@@ -6,32 +6,7 @@ import 'package:flutter/rendering.dart';
 
 import 'example.dart';
 
-class DistortPaint extends StatefulWidget {
-  @override
-  _DistortPaintState createState() => _DistortPaintState();
-}
-
-class _DistortPaintState extends State<DistortPaint>
-    with SingleTickerProviderStateMixin {
-  AnimationController animation;
-
-  @override
-  void initState() {
-    super.initState();
-
-    animation = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: 5),
-    );
-    animation.repeat();
-  }
-
-  @override
-  void dispose() {
-    animation.dispose();
-    super.dispose();
-  }
-
+class DistortPaint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -39,7 +14,6 @@ class _DistortPaintState extends State<DistortPaint>
         color: Colors.black,
         constraints: BoxConstraints.expand(),
         child: PixelPerfectUi(
-          painter: MyPainter3(animation),
           child: Padding(
             padding: const EdgeInsets.all(1),
             child: MyHomePage(title: 'Flutter Demo Home Page'),
@@ -51,12 +25,10 @@ class _DistortPaintState extends State<DistortPaint>
 }
 
 class PixelPerfectUi extends StatefulWidget {
-  final PixelPerfectPainter painter;
   final Widget child;
 
   PixelPerfectUi({
     Key key,
-    @required this.painter,
     @required this.child,
   }) : super(key: key);
 
@@ -64,9 +36,32 @@ class PixelPerfectUi extends StatefulWidget {
   _PixelPerfectUiState createState() => _PixelPerfectUiState();
 }
 
-class _PixelPerfectUiState extends State<PixelPerfectUi> {
+class _PixelPerfectUiState extends State<PixelPerfectUi>
+    with SingleTickerProviderStateMixin {
   final globalKey = GlobalKey();
+
+  PixelPerfectPainter painter;
+  AnimationController animation;
+
   bool _pending = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    animation = AnimationController(vsync: this);
+    animation.duration = Duration(seconds: 5);
+
+    painter = WavePainter(animation);
+
+    animation.repeat();
+  }
+
+  @override
+  void dispose() {
+    animation.dispose();
+    super.dispose();
+  }
 
   void update() {
     if (_pending) {
@@ -78,7 +73,7 @@ class _PixelPerfectUiState extends State<PixelPerfectUi> {
 
     _pending = true;
     boundary.toImage(pixelRatio: 1).then((image) {
-      widget.painter.onImage(image);
+      painter.onImage(image);
       _pending = false;
     });
   }
@@ -88,7 +83,7 @@ class _PixelPerfectUiState extends State<PixelPerfectUi> {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        CustomPaint(painter: widget.painter),
+        CustomPaint(painter: painter),
         Opacity(
           opacity: 0.01,
           child: RepaintBoundary(
@@ -110,24 +105,18 @@ abstract class PixelPerfectPainter extends CustomPainter {
   void onImage(ui.Image image);
 }
 
-class MyPainter3 extends PixelPerfectPainter {
-  static const count = Offset(100, 1);
+class WavePainter extends PixelPerfectPainter {
+  static const sectionCount = Offset(100, 1);
 
   final Animation<double> animation;
   final positions = List<Offset>();
   final texture = List<Offset>();
+
   ui.Image _image;
   Size sectionSize;
   Size _lastSize;
-  final matrix = (Matrix4.identity()..scale(1.0)
-//              ..translate(
-//                size.width / 2 - _image.width / 4,
-//                size.height / 2 - _image.height / 4,
-//              )
-      )
-      .storage;
 
-  MyPainter3(this.animation) : super(repaint: animation);
+  WavePainter(this.animation) : super(repaint: animation);
 
   @override
   void onImage(ui.Image image) => _image = image;
@@ -136,10 +125,13 @@ class MyPainter3 extends PixelPerfectPainter {
     if (_lastSize == size) return;
     _lastSize = size;
 
-    sectionSize = Size(size.width / count.dx, size.height / count.dy);
+    sectionSize = Size(
+      size.width / sectionCount.dx,
+      size.height / sectionCount.dy,
+    );
 
-    for (var x = 0; x < count.dx; x++) {
-      for (var y = 0; y < count.dy; y++) {
+    for (var x = 0; x < sectionCount.dx; x++) {
+      for (var y = 0; y < sectionCount.dy; y++) {
         positions.addAll([
           Offset(sectionSize.width * x, sectionSize.height * y),
           Offset(sectionSize.width * x + sectionSize.width,
@@ -169,7 +161,12 @@ class MyPainter3 extends PixelPerfectPainter {
 
     final paint = Paint()
       ..filterQuality = FilterQuality.high
-      ..shader = ImageShader(_image, TileMode.clamp, TileMode.clamp, matrix);
+      ..shader = ImageShader(
+        _image,
+        TileMode.clamp,
+        TileMode.clamp,
+        Matrix4.identity().storage,
+      );
 
     calcVertices(size);
 
