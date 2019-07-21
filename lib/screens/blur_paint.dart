@@ -1,18 +1,42 @@
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-class BlurPaint extends StatefulWidget {
+class BlurPaint extends StatelessWidget {
   @override
-  _BlurPaintState createState() => _BlurPaintState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        color: Colors.black,
+        constraints: BoxConstraints.expand(),
+        child: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              GamePainter(),
+              BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(color: Colors.transparent),
+              ),
+              GamePainter(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-var globalKey = new GlobalKey();
+class GamePainter extends StatefulWidget {
+  const GamePainter({Key key}) : super(key: key);
 
-class _BlurPaintState extends State<BlurPaint>
+  @override
+  _GamePainterState createState() => _GamePainterState();
+}
+
+class _GamePainterState extends State<GamePainter>
     with SingleTickerProviderStateMixin {
   AnimationController animation;
 
@@ -20,10 +44,8 @@ class _BlurPaintState extends State<BlurPaint>
   void initState() {
     super.initState();
 
-    animation = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: 5),
-    );
+    final duration = Duration(seconds: 5);
+    animation = AnimationController(vsync: this, duration: duration);
     animation.repeat();
   }
 
@@ -35,118 +57,219 @@ class _BlurPaintState extends State<BlurPaint>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        color: Colors.black,
-        constraints: BoxConstraints.expand(),
-        child: SafeArea(child: CustomPaint(painter: MyPainter3(animation))),
-      ),
+    return CustomPaint(
+      painter: MyPainter3(animation),
+      isComplex: true,
+      willChange: true,
     );
   }
 }
 
 class MyPainter3 extends CustomPainter {
-  static const wallWidth = 200.0;
-  static const wallHeight = 60.0;
+  static const wallWidth = 50.0;
+  static const wallHeight = 500.0;
   static const wallCorner = 13.0;
-  static const lineWidth = 4.0;
-  static const entityScale = 2.0;
   static const entityPadding = 30.0;
 
-  static const red = Color(0xFFFF3200);
-  static const orange = Color(0xFFFFAC00);
-  static const yellow = Color(0xFFFFF100);
-  static const green = Color(0xFF0BFF00);
-  static const blue = Color(0xFF00F6FF);
-  static const colors = [red, orange, yellow, green, blue];
-  static const colorSections = [0.0, 0.25, 0.5, 0.75, 1.0];
-
-  //
-  static final wall = wallPath(wallWidth, wallHeight, wallCorner);
-  static final ghost1 = Ghost(blue, entityScale, lineWidth, -0.08);
-  static final ghost2 = Ghost(red, entityScale, lineWidth, -0.13);
-  static final ghost3 = Ghost(green, entityScale, lineWidth, -0.18);
+  final Frame frame;
+  final Wall wall;
+  final Player player;
+  static final ghost1 = Ghost(GamePaint.blue);
+  static final ghost2 = Ghost(GamePaint.green);
+  static final ghost3 = Ghost(GamePaint.red);
 
   final Animation<double> animation;
 
-  MyPainter3(this.animation) : super(repaint: animation);
+  MyPainter3(this.animation)
+      : frame = Frame(animation),
+        player = Player(animation),
+        wall = Wall(wallWidth, wallHeight, wallCorner, animation),
+        super(repaint: animation);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final midX = size.width / 2;
-    final midY = size.height / 2;
-
     //Color
-    final offset = size.width * 2 * animation.value;
-    final rainbow = rainbowPaint(size, offset, lineWidth, 0);
-    final rainbowBright = rainbowPaint(size, offset, lineWidth * 0.4, 0.4);
-    final rainbowFill = rainbowFillPaint(size, offset, lineWidth, 0);
-
-    //frame
-    final framePadding = 10.0;
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            framePadding,
-            framePadding,
-            size.width - framePadding * 2,
-            size.height - framePadding * 2,
-          ),
-          Radius.circular(5),
-        ),
-        rainbow);
-
-    //Wall
-    final wallPosition = (Matrix4.identity()..translate(midX, midY)).storage;
-    canvas.drawPath(wall.transform(wallPosition), rainbowFill);
-    canvas.drawPath(wall.transform(wallPosition), rainbow);
-    canvas.drawPath(wall.transform(wallPosition), rainbowBright);
-
-    //Player
-    final path = entityPath(size);
-    final mouth = (1 - (animation.value * 15 % 1) * 2).abs();
-    final playerPosition = getPlayerPosition(path, size);
-    final playerPath = player(entityScale, mouth).transform(playerPosition);
-
-    canvas.drawPath(playerPath, solidFillPaint(yellow.withOpacity(0.1), 0.1));
-    canvas.drawPath(playerPath, solidPaint(yellow, lineWidth * 0.6, 0));
-    canvas.drawPath(playerPath, solidPaint(yellow, lineWidth * 0.4, 0.2));
-
-    //Ghost
-    ghost1.draw(canvas, size, path, animation.value);
-    ghost2.draw(canvas, size, path, animation.value);
-    ghost3.draw(canvas, size, path, animation.value);
-  }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => true;
-
-  Float64List getPlayerPosition(Path path, Size size) {
-    final metric = path.computeMetrics().first;
-    final tangent = metric.getTangentForOffset(metric.length * animation.value);
-    final position = tangent.position;
-
-    return (Matrix4.identity()
-          ..translate(position.dx, position.dy)
-          ..rotateZ(
-            (pi - tangent.angle.abs()) % pi < 0.1
-                ? tangent.angle - pi
-                : tangent.angle,
-          ))
-        .storage;
-  }
-
-  Path entityPath(Size size) {
-    return Path()
+    final path = Path()
       ..addRect(Rect.fromLTWH(
         (size.width - wallWidth) / 2 - entityPadding,
         size.height / 2 - wallHeight / 2 - entityPadding,
         wallWidth + entityPadding * 2,
         wallHeight + entityPadding * 2,
       ));
+
+    final rainbow = RainbowPaint(size, Entity.lineWidth, 0);
+    rainbow.update(size, animation.value);
+
+    //Frame
+    frame.size = size;
+    frame.draw(canvas);
+
+    //Wall
+    wall.size = size;
+    wall.transform.setTranslationRaw(size.width / 2, size.height / 2, 0);
+    wall.draw(canvas);
+
+    //Player
+    player.size = size;
+    Offset pos = getPlayerPosition(path, animation.value).position;
+    player.transform.setTranslationRaw(pos.dx, pos.dy, 0);
+    player.transform.setRotationZ(getPlayerRotation(path, animation.value));
+    player.draw(canvas);
+
+    //Ghost
+
+    final ghosts = [
+      ghost1,
+      ghost2,
+      ghost3,
+      ghost1,
+      ghost2,
+      ghost3,
+      ghost1,
+      ghost2,
+      ghost3,
+    ];
+    double offset = 0.0;
+    ghosts.forEach((ghost) {
+      final t = getPlayerPosition(path, (animation.value - 0.08 - offset) % 1);
+      ghost.pupils = t.vector;
+      ghost.transform.setTranslationRaw(t.position.dx, t.position.dy, 0);
+      ghost.size = size;
+      ghost.draw(canvas);
+      offset += 0.05;
+    });
   }
 
-  Paint rainbowPaint(
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
+
+  ui.Tangent getPlayerPosition(Path path, double animation) {
+    final metric = path.computeMetrics().first;
+    return metric.getTangentForOffset(metric.length * animation);
+  }
+
+  double getPlayerRotation(Path path, double animation) {
+    final metric = path.computeMetrics().first;
+    final tangent = metric.getTangentForOffset(metric.length * animation);
+
+    return (pi - tangent.angle.abs()) % pi < 0.1
+        ? tangent.angle - pi
+        : tangent.angle;
+  }
+}
+
+abstract class GamePaint {
+  static const red = Color(0xFFFF3200);
+  static const orange = Color(0xFFFFAC00);
+  static const yellow = Color(0xFFFFF100);
+  static const green = Color(0xFF0BFF00);
+  static const blue = Color(0xFF00F6FF);
+
+  Paint get stroke;
+
+  Paint get highlight;
+
+  Paint get solid;
+}
+
+class SolidPaint implements GamePaint {
+  final Paint _stroke;
+  final Paint _highlight;
+  final Paint _solid;
+
+  SolidPaint(
+    Color color,
+    double lineWidth, {
+    double brightness = 0,
+  })  : _stroke = _strokePaint(color, lineWidth, brightness),
+        _highlight = _strokePaint(color, lineWidth * 0.4, brightness + 0.4),
+        _solid = _solidPaint(color, brightness);
+
+  Paint get stroke => _stroke;
+
+  Paint get highlight => _highlight;
+
+  Paint get solid => _solid;
+
+  static Paint _strokePaint(
+    Color color,
+    double lineWidth,
+    double brightness,
+  ) =>
+      Paint()
+        ..color = color
+        ..colorFilter = ColorFilter.mode(
+          Colors.white.withOpacity(brightness),
+          BlendMode.lighten,
+        )
+        //..maskFilter = MaskFilter.blur(BlurStyle.solid, 8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = lineWidth
+        ..isAntiAlias = false;
+
+  static Paint _solidPaint(
+    Color color,
+    double brightness,
+  ) =>
+      Paint()
+        ..color = color.withOpacity(0.2)
+        ..colorFilter = ColorFilter.mode(
+          Colors.white.withOpacity(brightness),
+          BlendMode.lighten,
+        )
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = false;
+}
+
+class RainbowPaint implements GamePaint {
+  static const colors = [
+    GamePaint.red,
+    GamePaint.orange,
+    GamePaint.yellow,
+    GamePaint.green,
+    GamePaint.blue,
+  ];
+  static const colorSections = [0.0, 0.25, 0.5, 0.75, 1.0];
+
+  final Paint _stroke;
+  final Paint _highlight;
+  final Paint _solid;
+
+  RainbowPaint(
+    Size size,
+    double lineWidth,
+    double brightness,
+  )   : _stroke = _strokePaint(size, 0, lineWidth, brightness),
+        _highlight = _strokePaint(size, 0, lineWidth * 0.4, brightness + 0.4),
+        _solid = _solidPaint(size, 0, lineWidth, brightness);
+
+  Paint get stroke => _stroke;
+
+  Paint get highlight => _highlight;
+
+  Paint get solid => _solid;
+
+  void update(Size size, double offset) {
+    offset = offset * size.width * 2;
+    final gradient = ui.Gradient.linear(
+      Offset(offset, size.height / 2),
+      Offset(size.width + offset, size.height / 2),
+      colors,
+      colorSections,
+      ui.TileMode.mirror,
+    );
+    _stroke.shader = gradient;
+    _highlight.shader = gradient;
+    _solid.shader = ui.Gradient.linear(
+      Offset(offset, size.height / 2),
+      Offset(size.width + offset, size.height / 2),
+      colors.map((c) => c.withOpacity(0.1)).toList(),
+      colorSections,
+      ui.TileMode.mirror,
+    );
+  }
+
+  static Paint _strokePaint(
     Size size,
     double offset,
     double lineWidth,
@@ -164,12 +287,13 @@ class MyPainter3 extends CustomPainter {
         Colors.white.withOpacity(brightness),
         BlendMode.lighten,
       )
-      ..maskFilter = MaskFilter.blur(BlurStyle.solid, 8)
+      //..maskFilter = MaskFilter.blur(BlurStyle.solid, 8)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = lineWidth;
+      ..strokeWidth = lineWidth
+      ..isAntiAlias = false;
   }
 
-  Paint rainbowFillPaint(
+  static Paint _solidPaint(
     Size size,
     double offset,
     double lineWidth,
@@ -188,10 +312,137 @@ class MyPainter3 extends CustomPainter {
         BlendMode.lighten,
       )
       ..style = PaintingStyle.fill
-      ..strokeWidth = lineWidth;
+      ..strokeWidth = lineWidth
+      ..isAntiAlias = false;
+  }
+}
+
+abstract class Entity {
+  static const lineWidth = 4.0;
+  static const scale = 2.0;
+
+  final transform = Matrix4.identity();
+
+  Size _size;
+
+  Size get size => _size;
+
+  Offset get position => Offset(transform.storage[12], transform.storage[13]);
+
+  set size(size) {
+    final oldValue = _size;
+    _size = size;
+    if (oldValue != size) onSize();
   }
 
-  Path player(double scale, double mouth) {
+  void onSize();
+
+  void draw(Canvas canvas);
+}
+
+class Frame extends Entity {
+  static const framePadding = 10.0;
+
+  RainbowPaint _paint;
+
+  Frame(Animation<double> animation) {
+    animation.addListener(() => _paint?.update(size, animation.value));
+  }
+
+  @override
+  void onSize() {
+    _paint = RainbowPaint(size, Entity.lineWidth, 0);
+  }
+
+  void draw(Canvas canvas) {
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            framePadding,
+            framePadding,
+            size.width - framePadding * 2,
+            size.height - framePadding * 2,
+          ),
+          Radius.circular(5),
+        ),
+        _paint.stroke);
+  }
+}
+
+class Wall extends Entity {
+  final Path path;
+
+  RainbowPaint _paint;
+
+  Wall(
+    double wallWidth,
+    double wallHeight,
+    double wallCorner,
+    Animation<double> animation,
+  ) : path = getPath(wallWidth, wallHeight, wallCorner, Entity.scale) {
+    animation.addListener(() => _paint?.update(size, animation.value));
+  }
+
+  @override
+  void onSize() {
+    _paint = RainbowPaint(size, Entity.lineWidth, 0);
+  }
+
+  void draw(Canvas canvas) {
+    canvas.drawPath(path.transform(transform.storage), _paint.solid);
+    canvas.drawPath(path.transform(transform.storage), _paint.stroke);
+    canvas.drawPath(path.transform(transform.storage), _paint.highlight);
+  }
+
+  static Path getPath(
+    double width,
+    double height,
+    double corner,
+    double scale,
+  ) {
+    return Path()
+      ..moveTo(-width / 2 + corner, -height / 2)
+      ..lineTo(width / 2 - corner, -height / 2)
+      ..lineTo(width / 2 - corner, -height / 2 + corner)
+      ..lineTo(width / 2, -height / 2 + corner)
+      ..lineTo(width / 2, height / 2 - corner)
+      ..lineTo(width / 2 - corner, height / 2 - corner)
+      ..lineTo(width / 2 - corner, height / 2)
+      ..lineTo(-width / 2 + corner, height / 2)
+      ..lineTo(-width / 2 + corner, height / 2 - corner)
+      ..lineTo(-width / 2, height / 2 - corner)
+      ..lineTo(-width / 2, -height / 2 + corner)
+      ..lineTo(-width / 2 + corner, -height / 2 + corner)
+      ..close();
+  }
+}
+
+class Player extends Entity {
+  static const double lineWidth = 1.5;
+  final Animation<double> animation;
+  ui.Path _playerPath;
+  GamePaint _paint;
+
+  Player(this.animation) {
+    _playerPath = getPath(Entity.scale, 0).transform(transform.storage);
+    animation.addListener(() {
+      final mouth = (1 - (animation.value * 15 % 1) * 2).abs();
+      _playerPath = getPath(Entity.scale, mouth).transform(transform.storage);
+    });
+  }
+
+  @override
+  void onSize() {
+    _paint = SolidPaint(GamePaint.yellow, lineWidth);
+  }
+
+  void draw(Canvas canvas) {
+    canvas.drawPath(_playerPath, _paint.solid);
+    canvas.drawPath(_playerPath, _paint.stroke);
+    canvas.drawPath(_playerPath, _paint.highlight);
+  }
+
+  Path getPath(double scale, double mouth) {
     return Path()
       ..moveTo(0, 0)
       //mouth top
@@ -228,84 +479,45 @@ class MyPainter3 extends CustomPainter {
       ..lineTo(-7 * scale, 3 * scale * mouth)
       ..close();
   }
-
-  static Path wallPath(double width, double height, double scale) {
-    return Path()
-      ..moveTo(-width / 2 + wallCorner, -height / 2)
-      ..lineTo(width / 2 - wallCorner, -height / 2)
-      ..lineTo(width / 2 - wallCorner, -height / 2 + wallCorner)
-      ..lineTo(width / 2, -height / 2 + wallCorner)
-      ..lineTo(width / 2, height / 2 - wallCorner)
-      ..lineTo(width / 2 - wallCorner, height / 2 - wallCorner)
-      ..lineTo(width / 2 - wallCorner, height / 2)
-      ..lineTo(-width / 2 + wallCorner, height / 2)
-      ..lineTo(-width / 2 + wallCorner, height / 2 - wallCorner)
-      ..lineTo(-width / 2, height / 2 - wallCorner)
-      ..lineTo(-width / 2, -height / 2 + wallCorner)
-      ..lineTo(-width / 2 + wallCorner, -height / 2 + wallCorner)
-      ..close();
-  }
 }
 
-class Ghost {
-  static final eyeSolidPaint =
-      solidFillPaint(Colors.white.withOpacity(0.6), 0.1);
-  static final pupilPaint = solidFillPaint(Colors.black, 0);
-  final Paint eyePaint;
-  final Paint ghostSolidPaint;
-  final Paint ghostPaint;
-  final Paint ghostHighlightPaint;
+class Ghost extends Entity {
+  static const double lineWidth = 1.5;
+  Offset pupils = Offset.zero;
   final Path ghostPath;
   final Path eyesPath;
 
-  final double entityScale;
-  final double offset;
   final Color color;
+  final Paint eyePaint = Paint()..color = Colors.white;
+  final Paint pupilPaint = Paint()..color = Colors.black;
 
-  Ghost(this.color, this.entityScale, double lineWidth, this.offset)
-      : this.eyePaint = solidPaint(Colors.white, lineWidth * 0.2, 0.2),
-        this.ghostSolidPaint = solidFillPaint(color.withOpacity(0.1), 0.1),
-        this.ghostPaint = solidPaint(color, lineWidth * 0.6, 0),
-        this.ghostHighlightPaint = solidPaint(color, lineWidth * 0.4, 0.2),
-        this.ghostPath = ghost(entityScale),
-        this.eyesPath = ghostEyes(entityScale);
+  GamePaint _paint;
 
-  void draw(Canvas canvas, Size size, Path path, double animation) {
-    final ghostPosition = getGhostPosition(path, size, animation, offset);
-    final ghostEntity = ghostPath.transform(ghostPosition);
-    final eyes = eyesPath.transform(ghostPosition);
-    final metric = path.computeMetrics().first;
-    final pathOffset =
-        (metric.length * animation + metric.length * offset) % metric.length;
-    final tangent = metric.getTangentForOffset(pathOffset);
+  Ghost(this.color)
+      : this.ghostPath = ghost(Entity.scale),
+        this.eyesPath = ghostEyes(Entity.scale);
 
-    final pupils = ghostPupils(
-      entityScale,
-      tangent.vector.dx,
-      tangent.vector.dy,
-    ).transform(ghostPosition);
-
-    canvas.drawPath(ghostEntity, ghostSolidPaint);
-    canvas.drawPath(ghostEntity, ghostPaint);
-    canvas.drawPath(ghostEntity, ghostHighlightPaint);
-
-    canvas.drawPath(eyes, eyeSolidPaint);
-    canvas.drawPath(eyes, eyePaint);
-    canvas.drawPath(pupils, pupilPaint);
+  @override
+  void onSize() {
+    _paint = SolidPaint(color, lineWidth);
   }
 
-  Float64List getGhostPosition(
-    Path path,
-    Size size,
-    double animation,
-    double offset,
-  ) {
-    final metric = path.computeMetrics().first;
-    final tangent = metric.getTangentForOffset(
-        (metric.length * animation + metric.length * offset) % metric.length);
-    final position = tangent.position;
+  void draw(Canvas canvas) {
+    final ghostEntity = ghostPath.transform(transform.storage);
+    final eyes = eyesPath.transform(transform.storage);
+    final pupils = ghostPupils(
+      Entity.scale,
+      this.pupils.dx,
+      this.pupils.dy,
+    ).transform(transform.storage);
 
-    return (Matrix4.identity()..translate(position.dx, position.dy)).storage;
+    canvas.drawPath(ghostEntity, _paint.solid);
+    canvas.drawPath(ghostEntity, _paint.stroke);
+    canvas.drawPath(ghostEntity, _paint.stroke);
+    canvas.drawPath(ghostEntity, _paint.highlight);
+
+    canvas.drawPath(eyes, eyePaint);
+    canvas.drawPath(pupils, pupilPaint);
   }
 
   static Path ghost(double scale) {
@@ -404,33 +616,4 @@ class Ghost {
       ..lineTo(x + 4 * scale, y)
       ..close();
   }
-}
-
-Paint solidPaint(
-  Color color,
-  double lineWidth,
-  double brightness,
-) {
-  return Paint()
-    ..color = color
-    ..colorFilter = ColorFilter.mode(
-      Colors.white.withOpacity(brightness),
-      BlendMode.lighten,
-    )
-    ..maskFilter = MaskFilter.blur(BlurStyle.solid, 8)
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = lineWidth;
-}
-
-Paint solidFillPaint(
-  Color color,
-  double brightness,
-) {
-  return Paint()
-    ..color = color
-    ..colorFilter = ColorFilter.mode(
-      Colors.white.withOpacity(brightness),
-      BlendMode.lighten,
-    )
-    ..style = PaintingStyle.fill;
 }

@@ -11,13 +11,9 @@ class DistortPaint extends StatefulWidget {
   _DistortPaintState createState() => _DistortPaintState();
 }
 
-var globalKey = new GlobalKey();
-
 class _DistortPaintState extends State<DistortPaint>
     with SingleTickerProviderStateMixin {
   AnimationController animation;
-  ui.Image image;
-  bool _pending = false;
 
   @override
   void initState() {
@@ -28,7 +24,6 @@ class _DistortPaintState extends State<DistortPaint>
       duration: Duration(seconds: 5),
     );
     animation.repeat();
-    update();
   }
 
   @override
@@ -37,71 +32,105 @@ class _DistortPaintState extends State<DistortPaint>
     super.dispose();
   }
 
-  void update() {
-    if (_pending) {
-      print("pending!");
-      return;
-    }
-    _pending = true;
-
-    Future(() async {
-      RenderRepaintBoundary boundary =
-          globalKey.currentContext.findRenderObject();
-
-      final image = await boundary.toImage(pixelRatio: 2);
-      _pending = false;
-      setState(() => this.image = image);
-    }).catchError((error) {
-      print(error);
-      _pending = false;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
         color: Colors.black,
         constraints: BoxConstraints.expand(),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            CustomPaint(
-              painter: MyPainter3(image, animation),
-            ),
-            Opacity(
-              opacity: 0.01,
-              child: Center(
-                child: RepaintBoundary(
-                  key: globalKey,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: MyHomePage(
-                      title: 'Flutter Demo Home Page',
-                      onSetState: update,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        child: PixelPerfectUi(
+          painter: MyPainter3(animation),
+          child: Padding(
+            padding: const EdgeInsets.all(1),
+            child: MyHomePage(title: 'Flutter Demo Home Page'),
+          ),
         ),
       ),
     );
   }
 }
 
-class MyPainter3 extends CustomPainter {
-  static const count = Offset(50, 50);
+class PixelPerfectUi extends StatefulWidget {
+  final PixelPerfectPainter painter;
+  final Widget child;
 
-  final ui.Image image;
+  PixelPerfectUi({
+    Key key,
+    @required this.painter,
+    @required this.child,
+  }) : super(key: key);
+
+  @override
+  _PixelPerfectUiState createState() => _PixelPerfectUiState();
+}
+
+class _PixelPerfectUiState extends State<PixelPerfectUi> {
+  final globalKey = GlobalKey();
+  bool _pending = false;
+
+  void update() {
+    if (_pending) {
+      return;
+    }
+
+    RenderRepaintBoundary boundary =
+        globalKey.currentContext.findRenderObject();
+
+    _pending = true;
+    boundary.toImage(pixelRatio: 1).then((image) {
+      widget.painter.onImage(image);
+      _pending = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        CustomPaint(painter: widget.painter),
+        Opacity(
+          opacity: 0.01,
+          child: RepaintBoundary(
+            key: globalKey,
+            child: RenderCallback(
+              onPaint: update,
+              child: widget.child,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+abstract class PixelPerfectPainter extends CustomPainter {
+  PixelPerfectPainter({Listenable repaint}) : super(repaint: repaint);
+
+  void onImage(ui.Image image);
+}
+
+class MyPainter3 extends PixelPerfectPainter {
+  static const count = Offset(100, 1);
+
   final Animation<double> animation;
   final positions = List<Offset>();
   final texture = List<Offset>();
+  ui.Image _image;
   Size sectionSize;
   Size _lastSize;
+  final matrix = (Matrix4.identity()..scale(1.0)
+//              ..translate(
+//                size.width / 2 - _image.width / 4,
+//                size.height / 2 - _image.height / 4,
+//              )
+      )
+      .storage;
 
-  MyPainter3(this.image, this.animation) : super(repaint: animation);
+  MyPainter3(this.animation) : super(repaint: animation);
+
+  @override
+  void onImage(ui.Image image) => _image = image;
 
   void calcVertices(Size size) {
     if (_lastSize == size) return;
@@ -136,22 +165,11 @@ class MyPainter3 extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (image == null) return;
+    if (_image == null) return;
 
     final paint = Paint()
       ..filterQuality = FilterQuality.high
-      ..shader = ImageShader(
-        image,
-        TileMode.clamp,
-        TileMode.clamp,
-        (Matrix4.identity()
-              ..scale(0.5)
-              ..translate(
-                size.width / 2 - image.width / 4,
-                size.height / 2 - image.height / 4,
-              ))
-            .storage,
-      );
+      ..shader = ImageShader(_image, TileMode.clamp, TileMode.clamp, matrix);
 
     calcVertices(size);
 
@@ -170,4 +188,42 @@ class MyPainter3 extends CustomPainter {
 
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => true;
+}
+
+class RenderCallback extends SingleChildRenderObjectWidget {
+  final VoidCallback onPaint;
+
+  RenderCallback({@required this.onPaint, Widget child}) : super(child: child);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return RenderCallbackBox(onPaint);
+  }
+}
+
+class RenderCallbackBox extends RenderShiftedBox {
+  final VoidCallback onPaint;
+
+  RenderCallbackBox(this.onPaint) : super(null);
+
+  @override
+  void performLayout() {
+    child.layout(
+      BoxConstraints(
+        minHeight: constraints.maxHeight,
+        maxHeight: constraints.maxHeight,
+        minWidth: constraints.maxWidth,
+        maxWidth: constraints.maxWidth,
+      ),
+      parentUsesSize: false,
+    );
+
+    size = Size(constraints.maxWidth, constraints.maxHeight);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    onPaint();
+  }
 }

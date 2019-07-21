@@ -16,7 +16,8 @@ var globalKey = new GlobalKey();
 class _DistortPaint2State extends State<DistortPaint2>
     with SingleTickerProviderStateMixin {
   AnimationController animation;
-  ui.Image image;
+  MyPainter3 _painter;
+  ScrollController scrollController;
   bool _pending = false;
   String text = String.fromCharCodes(
     List.generate(5000, (_) => (65 + Random().nextInt(26))),
@@ -31,6 +32,15 @@ class _DistortPaint2State extends State<DistortPaint2>
       duration: Duration(seconds: 5),
     );
     animation.repeat();
+
+    _painter = MyPainter3(animation);
+
+    scrollController = ScrollController();
+    scrollController.addListener((){
+      print(scrollController.initialScrollOffset);
+      print(scrollController.offset);
+    });
+
     update();
   }
 
@@ -53,7 +63,8 @@ class _DistortPaint2State extends State<DistortPaint2>
 
       final image = await boundary.toImage(pixelRatio: 2);
       _pending = false;
-      setState(() => this.image = image);
+      _painter.update(image);
+      setState(() {});
     }).catchError((error) {
       print(error);
       _pending = false;
@@ -66,34 +77,38 @@ class _DistortPaint2State extends State<DistortPaint2>
       body: Container(
         color: Colors.black,
         constraints: BoxConstraints.expand(),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            CustomPaint(
-              painter: MyPainter3(image, animation),
-            ),
-            Opacity(
-              opacity: 0.01,
-              child: RepaintBoundary(
-                key: globalKey,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Container(
-                    color: Colors.white,
-                    constraints: BoxConstraints.expand(),
-                    child: Center(
-                      child: Stack(
-                        children: <Widget>[
-                          Text(text),
-                          RenderCallback(update),
-                        ],
+        child: GestureDetector(
+          onPanUpdate: (event) {
+            print(event.delta);
+            _painter.move(event.globalPosition, event.delta);
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              CustomPaint(painter: _painter),
+              Opacity(
+                opacity: 0.01,
+                child: RepaintBoundary(
+                  key: globalKey,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Container(
+                      color: Colors.white,
+                      constraints: BoxConstraints.expand(),
+                      child: SingleChildScrollView(
+                        child: Stack(
+                          children: <Widget>[
+                            Text(text),
+                            //RenderCallback(update),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -103,14 +118,15 @@ class _DistortPaint2State extends State<DistortPaint2>
 class MyPainter3 extends CustomPainter {
   static const count = Offset(50, 50);
 
-  final ui.Image image;
+  ui.Image image;
   final Animation<double> animation;
   final positions = List<Offset>();
   final texture = List<Offset>();
   Size sectionSize;
   Size _lastSize;
+  Offset delta = Offset(0, 0);
 
-  MyPainter3(this.image, this.animation) : super(repaint: animation);
+  MyPainter3(this.animation) : super(repaint: animation);
 
   void calcVertices(Size size) {
     if (_lastSize == size) return;
@@ -143,8 +159,13 @@ class MyPainter3 extends CustomPainter {
     }
   }
 
-  void move(){
+  void update(ui.Image image) {
+    this.image = image;
+  }
 
+  void move(Offset position, Offset delta) {
+    this.delta = delta;
+    print(delta.dy);
   }
 
   @override
@@ -171,7 +192,9 @@ class MyPainter3 extends CustomPainter {
     final vertices = ui.Vertices(
       VertexMode.triangleStrip,
       positions,
-      textureCoordinates: texture,
+      textureCoordinates: texture
+          .map((uv) => uv.translate(0, sin(uv.dx * 0.008) * 50 * delta.dy))
+          .toList(),
     );
     canvas.drawVertices(vertices, BlendMode.srcOver, paint);
   }

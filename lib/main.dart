@@ -6,6 +6,7 @@ import 'package:motion/screens/distort_paint.dart';
 import 'package:motion/screens/distort_paint_2.dart';
 import 'package:motion/screens/elastic_box.dart';
 import 'package:motion/screens/elastic_box_2.dart';
+import 'package:motion/screens/heart.dart';
 import 'package:motion/screens/paint_game.dart';
 import 'package:motion/screens/presi_box.dart';
 
@@ -17,10 +18,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       home: PageView(
         children: <Widget>[
+          HeartAnimation(),
           //DistortPaint2(),
-          Cube3D(),
-          BlurPaint(),
           DistortPaint(),
+          BlurPaint(),
+          Cube3D(),
           //ElasticBox2(),
           Cube3D(simple: false),
           CircleAnimation(),
