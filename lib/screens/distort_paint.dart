@@ -6,44 +6,15 @@ import 'package:flutter/rendering.dart';
 
 import 'example.dart';
 
-class DistortPaint extends StatelessWidget {
+class DistortPaint extends StatefulWidget {
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        color: Colors.black,
-        constraints: BoxConstraints.expand(),
-        child: PixelPerfectUi(
-          child: Padding(
-            padding: const EdgeInsets.all(1),
-            child: MyHomePage(title: 'Flutter Demo Home Page'),
-          ),
-        ),
-      ),
-    );
-  }
+  _DistortPaintState createState() => _DistortPaintState();
 }
 
-class PixelPerfectUi extends StatefulWidget {
-  final Widget child;
-
-  PixelPerfectUi({
-    Key key,
-    @required this.child,
-  }) : super(key: key);
-
-  @override
-  _PixelPerfectUiState createState() => _PixelPerfectUiState();
-}
-
-class _PixelPerfectUiState extends State<PixelPerfectUi>
+class _DistortPaintState extends State<DistortPaint>
     with SingleTickerProviderStateMixin {
-  final globalKey = GlobalKey();
-
   PixelPerfectPainter painter;
   AnimationController animation;
-
-  bool _pending = false;
 
   @override
   void initState() {
@@ -63,7 +34,44 @@ class _PixelPerfectUiState extends State<PixelPerfectUi>
     super.dispose();
   }
 
-  void update() {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        color: Colors.black,
+        constraints: BoxConstraints.expand(),
+        child: PixelPerfectUi(
+          painter: painter,
+          child: Padding(
+            padding: const EdgeInsets.all(1),
+            child: MyHomePage(title: 'Flutter Demo Home Page'),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PixelPerfectUi extends StatefulWidget {
+  final Widget child;
+  final PixelPerfectPainter painter;
+
+  PixelPerfectUi({
+    Key key,
+    @required this.child,
+    @required this.painter,
+  }) : super(key: key);
+
+  @override
+  _PixelPerfectUiState createState() => _PixelPerfectUiState();
+}
+
+class _PixelPerfectUiState extends State<PixelPerfectUi> {
+  final globalKey = GlobalKey();
+
+  bool _pending = false;
+
+  Future update() async {
     if (_pending) {
       return;
     }
@@ -72,10 +80,9 @@ class _PixelPerfectUiState extends State<PixelPerfectUi>
         globalKey.currentContext.findRenderObject();
 
     _pending = true;
-    boundary.toImage(pixelRatio: 1).then((image) {
-      painter.onImage(image);
-      _pending = false;
-    });
+    final image = await boundary.toImage(pixelRatio: 1);
+    widget.painter.onImage(image);
+    _pending = false;
   }
 
   @override
@@ -83,9 +90,9 @@ class _PixelPerfectUiState extends State<PixelPerfectUi>
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        CustomPaint(painter: painter),
+        CustomPaint(painter: widget.painter),
         Opacity(
-          opacity: 0.01,
+          opacity: 0.5,
           child: RepaintBoundary(
             key: globalKey,
             child: RenderCallback(
