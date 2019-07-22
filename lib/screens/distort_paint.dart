@@ -92,7 +92,7 @@ class _PixelPerfectUiState extends State<PixelPerfectUi> {
       children: <Widget>[
         CustomPaint(painter: widget.painter),
         Opacity(
-          opacity: 0.5,
+          opacity: 0.01,
           child: RepaintBoundary(
             key: globalKey,
             child: RenderCallback(
